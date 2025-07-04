@@ -1,8 +1,8 @@
-from flask import Flask, request, abort, send_from_directory
+from flask import Flask, request, abort
 import os
 import json
 import requests
-import matplotlib.pyplot as plt
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -21,41 +21,6 @@ def reply_message(reply_token, message_data):
         "messages": [message_data]
     }
     requests.post("https://api.line.me/v2/bot/message/reply", headers=headers, data=json.dumps(data))
-
-def draw_road_and_bead(match_results):
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.axis('off')
-
-    # -------------------------------
-    # 畫大路 (左邊)
-    x_offset = 0
-    y_levels = {}
-    max_col = 0
-    for i, result in enumerate(match_results):
-        if i == 0 or result != match_results[i-1]:
-            x_offset += 1
-            y_levels[x_offset] = 0
-        else:
-            y_levels[x_offset] += 1
-        y = -y_levels[x_offset]
-        color = 'red' if result == '莊' else ('blue' if result == '閒' else 'green')
-        ax.add_patch(plt.Circle((x_offset, y), 0.4, color=color, ec='black'))
-        max_col = max(max_col, x_offset)
-
-    # -------------------------------
-    # 畫珠盤路 (右邊)
-    for j, result in enumerate(match_results):
-        x = max_col + 3 + (j % 6)
-        y = -(j // 6)
-        color = 'red' if result == '莊' else ('blue' if result == '閒' else 'green')
-        ax.add_patch(plt.Circle((x, y), 0.4, color=color, ec='black'))
-
-    # -------------------------------
-    ax.set_xlim(0, max_col + 10)
-    ax.set_ylim(-max(6, len(match_results) // 6 + 1), 1)
-    plt.tight_layout()
-    plt.savefig("static/baccarat_result.png")
-    plt.close()
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -94,29 +59,29 @@ def callback():
                 reply_message(event["replyToken"], {"type":"text", "text":"已記錄"})
                 continue
 
-            # 結束後回傳圖片
+            # 結束
             if clean_text == "結束":
                 if user_id not in user_data or "current_match" not in user_data[user_id]:
                     reply_message(event["replyToken"], {"type":"text", "text":"尚未有對局資料，請先開始一場對局"})
                     continue
                 match = user_data[user_id]["current_match"]
-                draw_road_and_bead(match)
-                img_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/static/baccarat_result.png"
-                reply_message(event["replyToken"], {
-                    "type":"image",
-                    "originalContentUrl": img_url,
-                    "previewImageUrl": img_url
-                })
+                count_z = match.count("莊")
+                count_x = match.count("閒")
+                count_h = match.count("和")
+
+                # 寫入歷史檔案
+                os.makedirs("data", exist_ok=True)
+                with open("data/history.txt", "a", encoding="utf-8") as f:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    f.write(f"{timestamp} : {''.join(match)}\n")
+
+                reply_text = f"對局結束：\n莊：{count_z}\n閒：{count_x}\n和：{count_h}"
+                reply_message(event["replyToken"], {"type":"text", "text":reply_text})
                 del user_data[user_id]
                 continue
 
             reply_message(event["replyToken"], {"type":"text", "text":"請輸入前三把結果（如：莊閒閒）、點數（如：46）或輸入 結束"})
     return "OK"
-
-# 靜態檔案路徑
-@app.route('/static/<path:filename>')
-def serve_static(filename):
-    return send_from_directory('static', filename)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))

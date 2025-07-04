@@ -8,7 +8,7 @@ app = Flask(__name__)
 CHANNEL_ACCESS_TOKEN = os.getenv("CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("CHANNEL_SECRET")
 
-# 簡單記憶體儲存，每個 user 的狀態
+# 使用者狀態記錄
 user_data = {}
 
 def reply_message(reply_token, text):
@@ -23,20 +23,12 @@ def reply_message(reply_token, text):
     requests.post("https://api.line.me/v2/bot/message/reply", headers=headers, data=json.dumps(data))
 
 def predict_next(result_str, point_str):
-    # result_str 例如 "莊閒閒"
-    # point_str 例如 "46" (閒4 莊6)
-
-    # 簡單邏輯示範：
+    # 簡單示例邏輯
     if "閒閒" in result_str:
         return "莊"
-    if len(point_str) != 2 or not point_str.isdigit():
-        return "閒"  # 預設
     p = int(point_str[0])
     b = int(point_str[1])
-    if b > p:
-        return "莊"
-    else:
-        return "閒"
+    return "莊" if b > p else "閒"
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -49,25 +41,33 @@ def callback():
             user_id = event["source"]["userId"]
             text = event["message"]["text"].strip()
 
-            # 判斷是否是前三把結果(只含莊閒，長度3)
-            if len(text) == 3 and all(c in ["莊", "閒"] for c in text):
-                # 重設該使用者狀態
-                user_data[user_id] = {"result_str": text}
-                reply_message(event["replyToken"], "請輸入下一把的點數")
+            # 去除空白、破折號、換行
+            clean_text = text.replace(" ", "").replace("-", "").replace("\n", "")
+
+            # 如果是三個字符，且都是莊閒和
+            if len(clean_text) == 3 and all(c in ["莊", "閒", "和"] for c in clean_text):
+                if clean_text[2] == "和":
+                    reply_message(event["replyToken"], "看一把")
+                else:
+                    user_data[user_id] = {"result_str": clean_text}
+                    reply_message(event["replyToken"], "已記錄前三把結果，請輸入下一把的點數")
                 continue
 
-            # 判斷是否是點數輸入(長度2純數字)
-            if len(text) == 2 and text.isdigit():
+            # 如果輸入是2位數字點數
+            if len(clean_text) == 2 and clean_text.isdigit():
                 if user_id not in user_data or "result_str" not in user_data[user_id]:
                     reply_message(event["replyToken"], "請先輸入前三把結果（例如：莊閒閒）")
                     continue
                 result_str = user_data[user_id]["result_str"]
-                pred = predict_next(result_str, text)
-                reply_message(event["replyToken"], pred)
+                prediction = predict_next(result_str, clean_text)
+                reply_message(event["replyToken"], prediction)
                 continue
 
-            # 其他情況
-            reply_message(event["replyToken"], "請先輸入前三把結果（例如：莊閒閒），或輸入兩位數點數（例如：46）")
+            # 如果一開始就不是莊閒和組合的三個字
+            if user_id not in user_data:
+                reply_message(event["replyToken"], "請重新輸入前三把結果（只能用莊閒和組合）")
+            else:
+                reply_message(event["replyToken"], "請先輸入下一把的點數（例如：46）")
 
     return "OK"
 

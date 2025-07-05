@@ -1,4 +1,4 @@
-from flask import Flask, request, abort
+from flask import Flask, request, abort, Response
 import os
 import json
 import requests
@@ -82,6 +82,15 @@ def callback():
 
             reply_message(event["replyToken"], {"type":"text", "text":"請輸入前三把結果（如：莊閒閒）、點數（如：46）或輸入 結束"})
     return "OK"
+
+@app.route("/history")
+def show_history():
+    try:
+        with open("data/history.txt", encoding="utf-8") as f:
+            content = f.read()
+    except FileNotFoundError:
+        content = "目前尚無歷史紀錄。"
+    return Response(f"<pre>{content}</pre>", mimetype="text/html")
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))

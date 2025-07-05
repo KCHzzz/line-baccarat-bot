@@ -76,6 +76,13 @@ def show_history():
         content = "目前尚無歷史紀錄。"
     return Response(f"<pre>{content}</pre>", mimetype="text/html")
 
+@app.route("/reset")
+def reset_history():
+    os.makedirs("data", exist_ok=True)
+    with open("data/history.json", "w", encoding="utf-8") as f:
+        json.dump([], f)
+    return "已清空歷史紀錄。"
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
     app.run(host="0.0.0.0", port=port)

@@ -1,4 +1,4 @@
-from flask import Flask, request, abort
+from flask import Flask, request, abort, Response
 import os
 import json
 import requests
@@ -9,7 +9,7 @@ app = Flask(__name__)
 CHANNEL_ACCESS_TOKEN = os.getenv("CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("CHANNEL_SECRET")
 
-# 你的 GitHub raw json 檔案網址
+# GitHub raw JSON 的網址
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/KCHzzz/line-baccarat-bot/main/data/games.json"
 
 def reply_message(reply_token, message_data):
@@ -26,8 +26,7 @@ def reply_message(reply_token, message_data):
 def load_games():
     os.makedirs("data", exist_ok=True)
     file_path = "data/games.json"
-
-    # 如果本地沒檔案，就從 GitHub 拉
+    # 如果沒檔案就從 GitHub 抓
     if not os.path.exists(file_path):
         try:
             res = requests.get(GITHUB_RAW_URL)
@@ -35,7 +34,7 @@ def load_games():
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(res.text)
         except Exception as e:
-            print("下載 GitHub games.json 發生錯誤：", e)
+            print("從 GitHub 抓 games.json 失敗：", e)
 
     # 讀檔
     if os.path.exists(file_path):
@@ -71,7 +70,6 @@ def callback():
     events = body.get("events", [])
     games = load_games()
 
-    # session: 用來記錄目前對局（尚未結束的）
     if not hasattr(app, 'current_session'):
         app.current_session = []
 
@@ -79,8 +77,8 @@ def callback():
         if event.get("type") == "message" and event["message"]["type"] == "text":
             text = event["message"]["text"].strip().replace(" ", "").replace("-", "")
 
-            # 輸入整局（莊閒和）
-            if all(c in "莊閒和" for c in text) and len(text) >= 3:
+            # 當輸入的是長度 > 3 的莊閒和，視為要存對局
+            if all(c in "莊閒和" for c in text) and len(text) > 3:
                 one_game = list(text)
                 games.append(one_game)
                 save_games(games)
@@ -91,7 +89,7 @@ def callback():
                 })
                 continue
 
-            # 輸入前三把（例如 閒莊閒）
+            # 當輸入的是長度 = 3 的莊閒和，視為預測
             if all(c in "莊閒和" for c in text) and len(text) == 3:
                 app.current_session = list(text)
                 prediction = predict_next(app.current_session, games)
@@ -101,7 +99,7 @@ def callback():
                 })
                 continue
 
-            # 輸入點數（例如 84）
+            # 當輸入的是兩位數字 (點數)，自動判斷並預測
             if len(text) == 2 and text.isdigit():
                 p = int(text[0])
                 b = int(text[1])
@@ -124,9 +122,15 @@ def callback():
             # 如果都不是
             reply_message(event["replyToken"], {
                 "type": "text",
-                "text": "請輸入整局結果（莊閒和），或前三把（閒莊閒），或點數（例如84）"
+                "text": "請輸入長度 >3 的整局結果（莊閒和），或三局（閒莊閒），或點數（例如84）"
             })
     return "OK"
+
+@app.route("/games")
+def show_games():
+    games = load_games()
+    content = "\n".join(["".join(game) for game in games])
+    return Response(f"<pre>{content}</pre>", mimetype="text/html")
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))

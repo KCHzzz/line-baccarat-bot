@@ -3,6 +3,7 @@ import os
 import json
 import requests
 from collections import Counter
+import base64
 
 app = Flask(__name__)
 
@@ -44,8 +45,41 @@ def load_games():
         return []
 
 def save_games(games):
+    content = json.dumps(games, ensure_ascii=False, indent=2)
+    # 寫入本地檔案
     with open("data/games.json", "w", encoding="utf-8") as f:
-        json.dump(games, f, ensure_ascii=False, indent=2)
+        f.write(content)
+    # 推送到 GitHub
+    push_to_github(content)
+
+def push_to_github(content):
+    token = os.getenv("GITHUB_TOKEN")
+    repo = os.getenv("GITHUB_REPO")
+    filepath = os.getenv("GITHUB_FILE", "data/games.json")
+    api_url = f"https://api.github.com/repos/{repo}/contents/{filepath}"
+
+    # 先取 SHA
+    try:
+        r = requests.get(api_url, headers={
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json"
+        })
+        sha = r.json().get("sha") if r.status_code == 200 else None
+    except:
+        sha = None
+
+    data = {
+        "message": "update games.json from LINE bot",
+        "content": base64.b64encode(content.encode("utf-8")).decode("utf-8")
+    }
+    if sha:
+        data["sha"] = sha
+
+    res = requests.put(api_url, headers={
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }, data=json.dumps(data))
+    print("GitHub push:", res.status_code, res.text)
 
 def predict_next(last_three, games):
     next_moves = []

@@ -9,6 +9,9 @@ app = Flask(__name__)
 CHANNEL_ACCESS_TOKEN = os.getenv("CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("CHANNEL_SECRET")
 
+# 你的 GitHub raw json 檔案網址
+GITHUB_RAW_URL = "https://raw.githubusercontent.com/KCHzzz/line-baccarat-bot/main/data/games.json"
+
 def reply_message(reply_token, message_data):
     headers = {
         "Content-Type": "application/json",
@@ -23,6 +26,18 @@ def reply_message(reply_token, message_data):
 def load_games():
     os.makedirs("data", exist_ok=True)
     file_path = "data/games.json"
+
+    # 如果本地沒檔案，就從 GitHub 拉
+    if not os.path.exists(file_path):
+        try:
+            res = requests.get(GITHUB_RAW_URL)
+            if res.status_code == 200:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(res.text)
+        except Exception as e:
+            print("下載 GitHub games.json 發生錯誤：", e)
+
+    # 讀檔
     if os.path.exists(file_path):
         with open(file_path, encoding="utf-8") as f:
             return json.load(f)

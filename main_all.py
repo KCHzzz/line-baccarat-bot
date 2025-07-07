@@ -1,4 +1,4 @@
-from flask import Flask, request, abort
+from flask import Flask, request, abort, Response
 import os
 import json
 import requests
@@ -66,6 +66,7 @@ def callback():
     events = body.get("events", [])
     games = load_games()
 
+    # 初始化記憶
     if not hasattr(app, 'current_session'):
         app.current_session = []
     if not hasattr(app, 'predicted_next'):
@@ -77,6 +78,7 @@ def callback():
         if event.get("type") == "message" and event["message"]["type"] == "text":
             text = event["message"]["text"].strip().replace(" ", "").replace("-", "")
 
+            # 輸入整局 (>3)，會記錄到資料庫
             if all(c in "莊閒和" for c in text) and len(text) > 3:
                 one_game = list(text)
                 games.append(one_game)
@@ -85,14 +87,15 @@ def callback():
                 reply_message(event["replyToken"], {"type": "text", "text": summary})
                 continue
 
+            # 輸入前三把 (==3)，開始預測
             if all(c in "莊閒和" for c in text) and len(text) == 3:
                 app.current_session = list(text)
                 app.predicted_next = predict_next(app.current_session, games)
-                app.first_predict_done = False
                 reply_message(event["replyToken"], {"type": "text", "text": f"推薦:{app.predicted_next}"})
                 app.first_predict_done = True
                 continue
 
+            # 輸入點數
             if len(text) == 2 and text.isdigit():
                 p = int(text[0])
                 b = int(text[1])
@@ -101,31 +104,36 @@ def callback():
                 elif p < b:
                     result = "莊"
                 else:
-                    result = "和"
+                    reply_message(event["replyToken"], {"type": "text", "text": "看一把"})
+                    continue  # 和局直接跳過
 
                 app.current_session.append(result)
                 if len(app.current_session) > 4:
                     app.current_session.pop(0)
 
-                if len(app.current_session) == 4:
-                    games.append(app.current_session.copy())
-                    save_games(games)
-
+                # 點數預測時不寫入資料庫
                 reply_message(event["replyToken"], {"type": "text", "text": result})
                 app.predicted_next = predict_next(app.current_session[-3:], games)
                 continue
 
             reply_message(event["replyToken"], {
                 "type": "text",
-                "text": "請輸入整局（莊閒和）、前三把（閒莊閒）、或點數（84）"
+                "text": "請輸入整局（莊閒和）、前三把（莊閒莊）、或點數（84）"
             })
     return "OK"
 
 @app.route("/history")
-def history():
+def show_history():
     games = load_games()
-    content = "\n".join(["".join(game) for game in games])
-    return f"<pre>{content}</pre>"
+    lines = []
+    for game in games:
+        lines.append("".join(game))
+    return Response("<pre>\n" + "\n".join(lines) + "\n</pre>", mimetype="text/html")
+
+@app.route("/reset")
+def reset():
+    save_games([])
+    return "已清空所有資料庫紀錄"
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))

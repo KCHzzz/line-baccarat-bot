@@ -1,4 +1,3 @@
-
 from flask import Flask, request, abort
 import os
 import json
@@ -112,12 +111,7 @@ def callback():
                     games.append(app.current_session.copy())
                     save_games(games)
 
-                if app.first_predict_done:
-                    reply_message(event["replyToken"], {"type": "text", "text": result})
-                else:
-                    reply_message(event["replyToken"], {"type": "text", "text": f"推薦:{result}"})
-                    app.first_predict_done = True
-
+                reply_message(event["replyToken"], {"type": "text", "text": result})
                 app.predicted_next = predict_next(app.current_session[-3:], games)
                 continue
 
@@ -126,6 +120,12 @@ def callback():
                 "text": "請輸入整局（莊閒和）、前三把（閒莊閒）、或點數（84）"
             })
     return "OK"
+
+@app.route("/history")
+def history():
+    games = load_games()
+    content = "\n".join(["".join(game) for game in games])
+    return f"<pre>{content}</pre>"
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))

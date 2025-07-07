@@ -1,16 +1,14 @@
-from flask import Flask, request, abort, Response
+from flask import Flask, request, abort
 import os
 import json
 import requests
 from collections import Counter
-import base64
 
 app = Flask(__name__)
 
 CHANNEL_ACCESS_TOKEN = os.getenv("CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("CHANNEL_SECRET")
 
-# GitHub raw JSON 的網址
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/KCHzzz/line-baccarat-bot/main/data/games.json"
 
 def reply_message(reply_token, message_data):
@@ -27,7 +25,6 @@ def reply_message(reply_token, message_data):
 def load_games():
     os.makedirs("data", exist_ok=True)
     file_path = "data/games.json"
-    # 如果沒檔案就從 GitHub 抓
     if not os.path.exists(file_path):
         try:
             res = requests.get(GITHUB_RAW_URL)
@@ -35,9 +32,7 @@ def load_games():
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write(res.text)
         except Exception as e:
-            print("從 GitHub 抓 games.json 失敗：", e)
-
-    # 讀檔
+            print("下載 GitHub games.json 發生錯誤：", e)
     if os.path.exists(file_path):
         with open(file_path, encoding="utf-8") as f:
             return json.load(f)
@@ -45,41 +40,8 @@ def load_games():
         return []
 
 def save_games(games):
-    content = json.dumps(games, ensure_ascii=False, indent=2)
-    # 寫入本地檔案
     with open("data/games.json", "w", encoding="utf-8") as f:
-        f.write(content)
-    # 推送到 GitHub
-    push_to_github(content)
-
-def push_to_github(content):
-    token = os.getenv("GITHUB_TOKEN")
-    repo = os.getenv("GITHUB_REPO")
-    filepath = os.getenv("GITHUB_FILE", "data/games.json")
-    api_url = f"https://api.github.com/repos/{repo}/contents/{filepath}"
-
-    # 先取 SHA
-    try:
-        r = requests.get(api_url, headers={
-            "Authorization": f"token {token}",
-            "Accept": "application/vnd.github.v3+json"
-        })
-        sha = r.json().get("sha") if r.status_code == 200 else None
-    except:
-        sha = None
-
-    data = {
-        "message": "update games.json from LINE bot",
-        "content": base64.b64encode(content.encode("utf-8")).decode("utf-8")
-    }
-    if sha:
-        data["sha"] = sha
-
-    res = requests.put(api_url, headers={
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json"
-    }, data=json.dumps(data))
-    print("GitHub push:", res.status_code, res.text)
+        json.dump(games, f, ensure_ascii=False, indent=2)
 
 def predict_next(last_three, games):
     next_moves = []
@@ -104,36 +66,39 @@ def callback():
     events = body.get("events", [])
     games = load_games()
 
+    # 初始化記憶
     if not hasattr(app, 'current_session'):
         app.current_session = []
+    if not hasattr(app, 'predicted_next'):
+        app.predicted_next = None
+    if not hasattr(app, 'streak'):
+        app.streak = 1
+    if not hasattr(app, 'first_predict_done'):
+        app.first_predict_done = False
 
     for event in events:
         if event.get("type") == "message" and event["message"]["type"] == "text":
             text = event["message"]["text"].strip().replace(" ", "").replace("-", "")
 
-            # 當輸入的是長度 > 3 的莊閒和，視為要存對局
-            if all(c in "莊閒和" for c in text) and len(text) > 3:
+            # 整局輸入
+            if all(c in "莊閒和" for c in text) and len(text) >= 3:
                 one_game = list(text)
                 games.append(one_game)
                 save_games(games)
                 summary = f"莊:{one_game.count('莊')} 閒:{one_game.count('閒')} 和:{one_game.count('和')}"
-                reply_message(event["replyToken"], {
-                    "type": "text",
-                    "text": summary
-                })
+                reply_message(event["replyToken"], {"type": "text", "text": summary})
                 continue
 
-            # 當輸入的是長度 = 3 的莊閒和，視為預測
+            # 前三把結果
             if all(c in "莊閒和" for c in text) and len(text) == 3:
                 app.current_session = list(text)
-                prediction = predict_next(app.current_session, games)
-                reply_message(event["replyToken"], {
-                    "type": "text",
-                    "text": prediction
-                })
+                app.predicted_next = predict_next(app.current_session, games)
+                app.streak = 1
+                app.first_predict_done = False  # 第一把推薦後還未正式進入天一
+                reply_message(event["replyToken"], {"type": "text", "text": f"推薦:{app.predicted_next}"})
                 continue
 
-            # 當輸入的是兩位數字 (點數)，自動判斷並預測
+            # 點數判斷
             if len(text) == 2 and text.isdigit():
                 p = int(text[0])
                 b = int(text[1])
@@ -143,28 +108,38 @@ def callback():
                     result = "莊"
                 else:
                     result = "和"
+
                 app.current_session.append(result)
-                if len(app.current_session) > 3:
+                if len(app.current_session) > 4:
                     app.current_session.pop(0)
-                prediction = predict_next(app.current_session, games)
-                reply_message(event["replyToken"], {
-                    "type": "text",
-                    "text": prediction
-                })
+
+                # 紀錄到資料庫
+                if len(app.current_session) == 4:
+                    games.append(app.current_session.copy())
+                    save_games(games)
+
+                # 判斷是否要開始天一
+                if not app.first_predict_done:
+                    # 第一次只更新預測，還不算天一
+                    app.predicted_next = predict_next(app.current_session[-3:], games)
+                    app.first_predict_done = True
+                    reply_message(event["replyToken"], {"type": "text", "text": f"推薦:{app.predicted_next}"})
+                else:
+                    # 正式進入天一
+                    if app.predicted_next == result:
+                        reply_message(event["replyToken"], {"type": "text", "text": f"天一{result}"})
+                        app.streak = 1
+                    else:
+                        app.streak += 1
+                        reply_message(event["replyToken"], {"type": "text", "text": f"天{app.streak}{result}"})
+                    app.predicted_next = predict_next(app.current_session[-3:], games)
                 continue
 
-            # 如果都不是
             reply_message(event["replyToken"], {
                 "type": "text",
-                "text": "請輸入長度 >3 的整局結果（莊閒和），或三局（閒莊閒），或點數（例如84）"
+                "text": "請輸入整局結果（莊閒和），前三把（閒莊閒），或點數（84）"
             })
     return "OK"
-
-@app.route("/games")
-def show_games():
-    games = load_games()
-    content = "\n".join(["".join(game) for game in games])
-    return Response(f"<pre>{content}</pre>", mimetype="text/html")
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))

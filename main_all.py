@@ -73,15 +73,13 @@ def callback():
         app.predicted_next = None
     if not hasattr(app, 'streak'):
         app.streak = 1
-    if not hasattr(app, 'first_predict_done'):
-        app.first_predict_done = False
 
     for event in events:
         if event.get("type") == "message" and event["message"]["type"] == "text":
             text = event["message"]["text"].strip().replace(" ", "").replace("-", "")
 
-            # 整局輸入
-            if all(c in "莊閒和" for c in text) and len(text) > 3:
+            # 輸入整局
+            if all(c in "莊閒和" for c in text) and len(text) >= 3:
                 one_game = list(text)
                 games.append(one_game)
                 save_games(games)
@@ -94,11 +92,10 @@ def callback():
                 app.current_session = list(text)
                 app.predicted_next = predict_next(app.current_session, games)
                 app.streak = 1
-                app.first_predict_done = False  # 第一把推薦後還未正式進入天一
                 reply_message(event["replyToken"], {"type": "text", "text": f"推薦:{app.predicted_next}"})
                 continue
 
-            # 點數判斷
+            # 點數輸入
             if len(text) == 2 and text.isdigit():
                 p = int(text[0])
                 b = int(text[1])
@@ -118,26 +115,21 @@ def callback():
                     games.append(app.current_session.copy())
                     save_games(games)
 
-                # 判斷是否要開始天一
-                if not app.first_predict_done:
-                    # 第一次只更新預測，還不算天一
-                    app.predicted_next = predict_next(app.current_session[-3:], games)
-                    app.first_predict_done = True
-                    reply_message(event["replyToken"], {"type": "text", "text": f"推薦:{app.predicted_next}"})
+                # 直接天一開始判斷
+                if app.predicted_next == result:
+                    reply_message(event["replyToken"], {"type": "text", "text": f"天一{result}"})
+                    app.streak = 1
                 else:
-                    # 正式進入天一
-                    if app.predicted_next == result:
-                        reply_message(event["replyToken"], {"type": "text", "text": f"天一{result}"})
-                        app.streak = 1
-                    else:
-                        app.streak += 1
-                        reply_message(event["replyToken"], {"type": "text", "text": f"天{app.streak}{result}"})
-                    app.predicted_next = predict_next(app.current_session[-3:], games)
+                    app.streak += 1
+                    reply_message(event["replyToken"], {"type": "text", "text": f"天{app.streak}{result}"})
+
+                # 更新下一次預測
+                app.predicted_next = predict_next(app.current_session[-3:], games)
                 continue
 
             reply_message(event["replyToken"], {
                 "type": "text",
-                "text": "請輸入整局結果（莊閒和），前三把（閒莊閒），或點數（84）"
+                "text": "請輸入整局（莊閒和）、前三把（閒莊閒）、或點數（84）"
             })
     return "OK"
 

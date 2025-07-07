@@ -1,3 +1,4 @@
+
 from flask import Flask, request, abort
 import os
 import json
@@ -70,8 +71,8 @@ def callback():
         app.current_session = []
     if not hasattr(app, 'predicted_next'):
         app.predicted_next = None
-    if not hasattr(app, 'streak'):
-        app.streak = 1
+    if not hasattr(app, 'first_predict_done'):
+        app.first_predict_done = False
 
     for event in events:
         if event.get("type") == "message" and event["message"]["type"] == "text":
@@ -88,8 +89,9 @@ def callback():
             if all(c in "莊閒和" for c in text) and len(text) == 3:
                 app.current_session = list(text)
                 app.predicted_next = predict_next(app.current_session, games)
-                app.streak = 1
+                app.first_predict_done = False
                 reply_message(event["replyToken"], {"type": "text", "text": f"推薦:{app.predicted_next}"})
+                app.first_predict_done = True
                 continue
 
             if len(text) == 2 and text.isdigit():
@@ -110,12 +112,11 @@ def callback():
                     games.append(app.current_session.copy())
                     save_games(games)
 
-                # 修正後天X計數
-                if app.predicted_next == result:
-                    app.streak = 1
+                if app.first_predict_done:
+                    reply_message(event["replyToken"], {"type": "text", "text": result})
                 else:
-                    app.streak += 1
-                reply_message(event["replyToken"], {"type": "text", "text": f"天{app.streak}{result}"})
+                    reply_message(event["replyToken"], {"type": "text", "text": f"推薦:{result}"})
+                    app.first_predict_done = True
 
                 app.predicted_next = predict_next(app.current_session[-3:], games)
                 continue

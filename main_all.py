@@ -81,7 +81,7 @@ def callback():
             text = event["message"]["text"].strip().replace(" ", "").replace("-", "")
 
             # 整局輸入
-            if all(c in "莊閒和" for c in text) and len(text) >= 3:
+            if all(c in "莊閒和" for c in text) and len(text) > 3:
                 one_game = list(text)
                 games.append(one_game)
                 save_games(games)

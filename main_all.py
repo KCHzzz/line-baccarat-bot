@@ -66,7 +66,6 @@ def callback():
     events = body.get("events", [])
     games = load_games()
 
-    # 初始化記憶
     if not hasattr(app, 'current_session'):
         app.current_session = []
     if not hasattr(app, 'predicted_next'):
@@ -78,7 +77,6 @@ def callback():
         if event.get("type") == "message" and event["message"]["type"] == "text":
             text = event["message"]["text"].strip().replace(" ", "").replace("-", "")
 
-            # 輸入整局
             if all(c in "莊閒和" for c in text) and len(text) > 3:
                 one_game = list(text)
                 games.append(one_game)
@@ -87,7 +85,6 @@ def callback():
                 reply_message(event["replyToken"], {"type": "text", "text": summary})
                 continue
 
-            # 前三把結果
             if all(c in "莊閒和" for c in text) and len(text) == 3:
                 app.current_session = list(text)
                 app.predicted_next = predict_next(app.current_session, games)
@@ -95,7 +92,6 @@ def callback():
                 reply_message(event["replyToken"], {"type": "text", "text": f"推薦:{app.predicted_next}"})
                 continue
 
-            # 點數輸入
             if len(text) == 2 and text.isdigit():
                 p = int(text[0])
                 b = int(text[1])
@@ -110,20 +106,17 @@ def callback():
                 if len(app.current_session) > 4:
                     app.current_session.pop(0)
 
-                # 紀錄到資料庫
                 if len(app.current_session) == 4:
                     games.append(app.current_session.copy())
                     save_games(games)
 
-                # 直接天一開始判斷
+                # 修正後天X計數
                 if app.predicted_next == result:
-                    reply_message(event["replyToken"], {"type": "text", "text": f"天一{result}"})
                     app.streak = 1
                 else:
                     app.streak += 1
-                    reply_message(event["replyToken"], {"type": "text", "text": f"天{app.streak}{result}"})
+                reply_message(event["replyToken"], {"type": "text", "text": f"天{app.streak}{result}"})
 
-                # 更新下一次預測
                 app.predicted_next = predict_next(app.current_session[-3:], games)
                 continue
 

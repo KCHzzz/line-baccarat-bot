@@ -19,7 +19,6 @@ def reply_message(reply_token, message_data):
     }
     requests.post("https://api.line.me/v2/bot/message/reply", headers=headers, data=json.dumps(data))
 
-# 記錄目前大路
 if not hasattr(app, 'current_road'):
     app.current_road = []
 
@@ -75,21 +74,21 @@ def callback():
         if event.get("type") == "message" and event["message"]["type"] == "text":
             text = event["message"]["text"].strip().replace(" ", "").replace("-", "")
 
-            # 輸入一串莊閒和
+            # 大量輸入莊閒和
             if all(c in "莊閒和" for c in text) and len(text) >= 5:
                 app.current_road = list(text)
                 prediction = predict_by_roads(app.current_road)
                 reply_message(event["replyToken"], {"type": "text", "text": prediction})
                 continue
 
-            # 輸入一個莊閒和
+            # 輸入單一莊閒和
             if text in "莊閒和":
-                app.current_road.append(text)
                 prediction = predict_by_roads(app.current_road)
+                app.current_road.append(text)
                 reply_message(event["replyToken"], {"type": "text", "text": prediction})
                 continue
 
-            # 輸入點數（84）
+            # 輸入點數
             if len(text) == 2 and text.isdigit():
                 p = int(text[0])
                 b = int(text[1])
@@ -99,12 +98,16 @@ def callback():
                     result = "莊"
                 else:
                     result = "和"
-                app.current_road.append(result)
+
                 prediction = predict_by_roads(app.current_road)
+                app.current_road.append(result)
                 reply_message(event["replyToken"], {"type": "text", "text": prediction})
                 continue
 
-            reply_message(event["replyToken"], {"type": "text", "text": "請輸入至少5局的莊閒和序列，或單局（莊閒和），或點數（84）"})
+            reply_message(event["replyToken"], {
+                "type": "text",
+                "text": "請輸入至少5局莊閒和序列，或單局（莊/閒/和），或點數（84）"
+            })
 
     return "OK"
 

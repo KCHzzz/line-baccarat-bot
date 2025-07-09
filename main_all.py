@@ -66,19 +66,16 @@ def callback():
     events = body.get("events", [])
     games = load_games()
 
-    # 初始化記憶
     if not hasattr(app, 'current_session'):
         app.current_session = []
     if not hasattr(app, 'predicted_next'):
         app.predicted_next = None
-    if not hasattr(app, 'first_predict_done'):
-        app.first_predict_done = False
 
     for event in events:
         if event.get("type") == "message" and event["message"]["type"] == "text":
             text = event["message"]["text"].strip().replace(" ", "").replace("-", "")
 
-            # 輸入整局 (>3)，會記錄到資料庫
+            # 輸入整局
             if all(c in "莊閒和" for c in text) and len(text) > 3:
                 one_game = list(text)
                 games.append(one_game)
@@ -87,12 +84,11 @@ def callback():
                 reply_message(event["replyToken"], {"type": "text", "text": summary})
                 continue
 
-            # 輸入前三把 (==3)，開始預測
+            # 輸入前三把
             if all(c in "莊閒和" for c in text) and len(text) == 3:
                 app.current_session = list(text)
                 app.predicted_next = predict_next(app.current_session, games)
-                reply_message(event["replyToken"], {"type": "text", "text": f"推薦:{app.predicted_next}"})
-                app.first_predict_done = True
+                reply_message(event["replyToken"], {"type": "text", "text": f"{app.predicted_next}"})
                 continue
 
             # 輸入點數
@@ -105,15 +101,14 @@ def callback():
                     result = "莊"
                 else:
                     reply_message(event["replyToken"], {"type": "text", "text": "看一把"})
-                    continue  # 和局直接跳過
+                    continue
 
                 app.current_session.append(result)
                 if len(app.current_session) > 4:
                     app.current_session.pop(0)
 
-                # 點數預測時不寫入資料庫
-                reply_message(event["replyToken"], {"type": "text", "text": result})
                 app.predicted_next = predict_next(app.current_session[-3:], games)
+                reply_message(event["replyToken"], {"type": "text", "text": f"{app.predicted_next}"})
                 continue
 
             reply_message(event["replyToken"], {

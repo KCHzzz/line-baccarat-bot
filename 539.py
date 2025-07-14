@@ -1,6 +1,6 @@
 # 539.py
-# LINE Bot 接收開獎號碼，記錄到 results.csv，並分析熱門尾數推薦下一期下注
-# 使用 Flask + LINE Messaging API
+# LINE Bot 記錄539開獎號碼，統計尾數，推薦下注
+# 在 Render 上自動綁定 0.0.0.0:PORT
 
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
@@ -13,14 +13,18 @@ import csv
 
 app = Flask(__name__)
 
-# LINE 設定，記得在 Render 設定環境變數
+# 環境變數
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+
+# 安全檢查，避免忘記設定
+if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
+    raise SystemExit("❌ 環境變數 LINE_CHANNEL_ACCESS_TOKEN 或 LINE_CHANNEL_SECRET 尚未設定，請到 Render > Environment Variables 設定。")
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# 資料庫檔案（放在 GitHub Repo）
+# 資料庫檔案
 DATA_FILE = "results.csv"
 
 # 確保資料檔存在
@@ -85,4 +89,4 @@ def handle_message(event):
     )
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

@@ -47,41 +47,44 @@ def handle_message(event):
     text = event.message.text.strip()
     reply = ""
 
-    # 處理輸入 /record 指令
+    # 處理是否有 /record，或直接純數字
     if text.startswith("/record"):
-        try:
-            parts = text.replace("/record", "").strip()
-            nums = [int(x) for x in parts.split(",")]
-            if len(nums) != 5:
-                reply = "⚠️ 請輸入五個號碼，例如：/record 12,25,33,8,19"
-            else:
-                # 寫入 CSV
-                with open(DATA_FILE, "a", newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(nums)
-                reply = f"✅ 已記錄：{','.join(map(str, nums))}"
-
-                # 分析所有尾數
-                tails = []
-                with open(DATA_FILE) as f:
-                    reader = csv.reader(f)
-                    for row in reader:
-                        for num in row:
-                            tails.append(int(num) % 10)
-
-                counter = Counter(tails)
-                top_tail = counter.most_common(1)[0][0]
-
-                reply += "\n📊 熱門尾數：\n"
-                for tail, count in counter.most_common():
-                    reply += f"{tail} 尾：{count} 次\n"
-                reply += f"\n🔥 推薦下期下注：{top_tail} 尾"
-
-        except Exception as e:
-            reply = "⚠️ 格式錯誤，請輸入例如：/record 12,25,33,8,19"
-
+        parts = text.replace("/record", "").strip()
     else:
-        reply = "請用 /record 12,25,33,8,19 來記錄開獎號碼"
+        parts = text
+
+    try:
+        # 如果是10位數字
+        if len(parts) == 10 and parts.isdigit():
+            nums = [int(parts[i:i+2]) for i in range(0, 10, 2)]
+
+            # 寫入 CSV
+            with open(DATA_FILE, "a", newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(nums)
+            reply = f"✅ 已記錄：{','.join([f'{n:02}' for n in nums])}"
+
+            # 分析尾數
+            tails = []
+            with open(DATA_FILE) as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    for num in row:
+                        tails.append(int(num) % 10)
+
+            counter = Counter(tails)
+            top_tail = counter.most_common(1)[0][0]
+
+            reply += "\n📊 熱門尾數：\n"
+            for tail, count in counter.most_common():
+                reply += f"{tail} 尾：{count} 次\n"
+            reply += f"\n🔥 推薦下期下注：{top_tail} 尾"
+
+        else:
+            reply = "⚠️ 請輸入正確格式，例如 0819253342 或 /record 0819253342"
+
+    except Exception as e:
+        reply = f"⚠️ 發生錯誤，請再試一次"
 
     line_bot_api.reply_message(
         event.reply_token,
